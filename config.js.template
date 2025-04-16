@@ -1,0 +1,9 @@
+// config.js.template
+
+export const API_KEY = 'YOUR_API_KEY_HERE';
+
+export const WEBEX_API_KEY = 'YOUR_WEBEX_API_KEY_HERE';
+
+export const apiKey = 'YOUR_OPENAI_API_KEY_HERE';
+
+export const accessKey = 'YOUR_ACCESS_KEY_HERE';

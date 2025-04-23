@@ -74,10 +74,37 @@ export default function App() {
       }
     })();
   }, []);
-  
+  /*
   const openKakaoMap = (latitude, longitude, placeName = "병원") => {
-    const fallbackUrl = `https://map.kakao.com/link/map/${encodeURIComponent(placeName)},${latitude},${longitude}`;
+    const fallbackUrl = `https://map.kakao.com/link/to/${encodeURIComponent(placeName)},${latitude},${longitude}`;
     Linking.openURL(fallbackUrl);
+  };
+  */
+
+  const openKakaoMap = (latitude, longitude, placeName = "병원") => {
+    // 목적지 좌표와 이름 설정
+    const destName = encodeURIComponent(placeName);
+    
+    // 카카오맵 네비게이션 URL 스키마
+    // 목적지(ep), 차량 이용(by=CAR), 자동 길안내 시작(auto=true)
+    const kakaoMapAppUrl = `kakaomap://route?ep=${latitude},${longitude}&ename=${destName}&by=CAR&auto=true`;
+    
+    // 웹 URL (폴백)
+    const fallbackUrl = `https://map.kakao.com/link/to/${destName},${latitude},${longitude}`;
+  
+    Linking.canOpenURL(kakaoMapAppUrl)
+      .then(supported => {
+        if (supported) {
+          return Linking.openURL(kakaoMapAppUrl);
+        } else {
+          console.log('카카오맵 앱 URL을 열 수 없습니다. 웹 URL로 대체합니다.');
+          return Linking.openURL(fallbackUrl);
+        }
+      })
+      .catch(err => {
+        console.error('URL 열기 오류:', err);
+        Linking.openURL(fallbackUrl);
+      });
   };
   
 
@@ -405,13 +432,6 @@ export default function App() {
         <Text style={styles.chatButtonText}>환자 상태 분석</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.chatButton} onPress={startWebexChat}>
-        {/* Fix: Wrap icon in Text component */}
-        <Text>
-          <Ionicons name="videocam-outline" size={24} color="black" />
-        </Text>
-        <Text style={styles.chatButtonText}>의료진과 화상 통화하기</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 
@@ -420,7 +440,54 @@ export default function App() {
   const handleGPTAnalysis = async (inputText) => {
   
     try {
-      const prompt = `${inputText}를 바탕으로 현재 환자 상태 분석`;
+      const prompt = `${inputText}를 바탕으로 현재 필요한 응급처치 방법(예를 들어 손가락을 얼음물에 담그기, 혹은 상처부위를 심장보다 높게 하기 등)을 한줄로 깔끔하게 소개`;
+
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',  // 또는 'gpt-4' 사용 가능
+          messages: [{
+            role: 'user',
+            content: prompt
+          }],
+          temperature: 0.5,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(e => ({}));
+        console.error('API Error:', res.status, errorData);
+        throw new Error(`GPT API 호출 실패: ${res.status} ${JSON.stringify(errorData)}`);
+      }
+
+      const data = await res.json();
+      return data.choices[0].message.content.trim(); // 수정된 부분: message.content
+
+    } catch (error) {
+      console.error('GPT 분석 오류:', error);
+      return 'GPT 분석 오류 발생';  // 오류 발생 시 기본 메시지 반환
+    }
+  };
+
+
+  const handleDBAnalysis = async (inputText) => {
+    try {
+      const prompt = `${inputText}를 바탕으로
+        -성별
+        -추정 나이
+        -의식 상태
+        -사고 유형
+        -호소 증상
+        -통증 부위
+        -외상 부위
+        -출혈 여부
+        -기저질환
+        -복용 약물
+        에 대한 키 값 쌍 JSON 파일을 완성해서 다른 말 하지 말고 그것만 보내줘. 없는 데이터는 Null 처리하고.`;
 
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -456,14 +523,12 @@ export default function App() {
 
 
 
-
-
-
   const STTScreen = () => {
     const [isRecording, setIsRecording] = useState(false);
     const [recordings, setRecordings] = useState([]);
     const [processingId, setProcessingId] = useState(null); // STT 처리 중인 파일 ID
     const [recognizedText, setRecognizedText] = useState(''); // 인식된 텍스트
+    const [jsonText, setJsonText] = useState('')
     const recordingRef = useRef(null);
     const [recordingStatus, setRecordingStatus] = useState('idle');
   
@@ -733,11 +798,13 @@ export default function App() {
 
           // GPT 분석 요청
           const gptAnalysisResult = await handleGPTAnalysis(text);
+          // JSON 형식 반환
+          const dbAnalysisResult = await handleDBAnalysis(text);
           
           // 원본 텍스트와 GPT 분석 결과를 결합하여 클립보드에 복사
           const textToCopy = `${text}\n\n\n환자 분석: \n${gptAnalysisResult}`;
           setRecognizedText(textToCopy);
-          
+          setJsonText(dbAnalysisResult);
 
 
 
@@ -865,6 +932,17 @@ export default function App() {
     }, [bounceAnim]); // 빈 배열을 넣어 한 번만 실행되게 설정
 
 
+    // JSON 문자열을 파싱하는 함수
+    const parseJsonData = (jsonString) => {
+      try {
+        return typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+      } catch (error) {
+        console.error('JSON 파싱 오류:', error);
+        return null;
+      }
+    };
+
+
   
     // 녹음 목록 렌더링 아이템
     const renderRecordingItem = ({ item }) => (
@@ -910,60 +988,126 @@ export default function App() {
           <View style={{ width: 24 }} />
         </View>
   
-        <View style={styles.content}>
-          <TouchableOpacity
-            style={[
-              styles.micButton, 
-              isRecording && styles.micButtonRecording,
-              recordingStatus === 'preparing' && styles.micButtonPreparing,
-              recordingStatus === 'stopping' && styles.micButtonStopping
-            ]}
-            onPress={handleMicPress}
-            disabled={recordingStatus === 'preparing' || recordingStatus === 'stopping' || processingId !== null}
-          >
-            <Animated.View
+        {/* 전체 콘텐츠를 ScrollView로 감싸기 */}
+        <ScrollView
+          style={styles.scrollContainer}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={true}
+        >
+          <View style={styles.content}>
+            {/* 녹음 버튼 영역 */}
+            <TouchableOpacity
               style={[
-                {
-                  transform: [{ scale: bounceAnim }]
-                }
+                styles.micButton, 
+                isRecording && styles.micButtonRecording,
+                recordingStatus === 'preparing' && styles.micButtonPreparing,
+                recordingStatus === 'stopping' && styles.micButtonStopping
               ]}
+              onPress={handleMicPress}
+              disabled={recordingStatus === 'preparing' || recordingStatus === 'stopping' || processingId !== null}
             >
-              <Text style={styles.micButtonText}>
-                {isRecording ? '⏹️ 중지' : '🎙️ 녹음'}
-              </Text>
-            </Animated.View>
-          </TouchableOpacity>
-          
-          {/* 인식된 텍스트 영역 - 고정 높이와 스크롤 적용 */}
-          {recognizedText ? (
-            <View style={styles.textResultContainer}>
-              <Text style={styles.textResultTitle}>인식된 텍스트</Text>
-              <ScrollView 
-                style={styles.textResultScrollBox}
-                contentContainerStyle={styles.textResultScrollContent}
+              <Animated.View
+                style={[
+                  {
+                    transform: [{ scale: bounceAnim }]
+                  }
+                ]}
               >
-                <Text style={styles.textResultContent}>{recognizedText}</Text>
-              </ScrollView>
-              <Text style={styles.textResultHint}>텍스트가 클립보드에 복사되었습니다</Text>
-            </View>
-          ) : null}
-          
-          {/* 녹음 파일 목록 영역 - 남은 공간을 모두 차지하며 독립적으로 스크롤 */}
-          <View style={styles.recordingsContainer}>
-            <Text style={styles.recordingsTitle}>저장된 녹음 파일</Text>
+                <Text style={styles.micButtonText}>
+                  {isRecording ? '⏹️ 중지' : '🎙️ 녹음'}
+                </Text>
+              </Animated.View>
+            </TouchableOpacity>
             
-            {recordings.length === 0 ? (
-              <Text style={styles.noRecordingsText}>저장된 녹음 파일이 없습니다.</Text>
-            ) : (
-              <FlatList
-                data={recordings}
-                renderItem={renderRecordingItem}
-                keyExtractor={item => item.id}
-                style={styles.recordingsList}
-              />
-            )}
-          </View>
+            {/* 인식된 텍스트 영역 */}
+            {recognizedText ? (
+              <View style={styles.textResultContainer}>
+                <Text style={styles.textResultTitle}>인식된 텍스트</Text>
+                {/* 여기서는 중첩 ScrollView를 제거하고 텍스트를 직접 표시 */}
+                <View style={styles.textResultBox}>
+                  <Text style={styles.textResultContent}>{recognizedText}</Text>
+                </View>
+                <Text style={styles.textResultHint}>텍스트가 클립보드에 복사되었습니다</Text>
+              </View>
+            ) : null}
+  
+            {/* 환자 분석 결과 */}
+            {jsonText ? (
+      <View style={styles.analysisContainer}>
+        <Text style={styles.analysisTitle}>환자 분석 결과</Text>
+        <View style={styles.tableContainer}>
+          {(() => {
+            const patientData = parseJsonData(jsonText);
+          
+            if (!patientData) {
+              return (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>유효한 환자 데이터가 없습니다</Text>
+                </View>
+              );
+            }
+          
+            return (
+              <View style={styles.table}>
+                {/* 테이블 헤더 */}
+                <View style={styles.tableRow}>
+                  <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 1 }]}>
+                    <Text style={styles.tableHeaderText}>항목</Text>
+                  </View>
+                  <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 2 }]}>
+                    <Text style={styles.tableHeaderText}>내용</Text>
+                  </View>
+                </View>
+              
+                {/* 테이블 내용 */}
+                {Object.entries(patientData).map(([key, value], index) => (
+                  <View 
+                    key={key} 
+                    style={[
+                      styles.tableRow, 
+                      index % 2 === 0 ? styles.evenRow : styles.oddRow
+                    ]}
+                  >
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <Text style={styles.tableCellLabel}>{key}</Text>
+                    </View>
+                    <View style={[styles.tableCell, { flex: 2 }]}>
+                      <Text style={styles.tableCellValue}>
+                        {value === null || value === "Null" ? "정보 없음" : value}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
         </View>
+        <Text style={styles.resultHintText}>분석 결과가 저장되었습니다</Text>
+      </View>
+            ) : null}
+            
+            {/* 녹음 파일 목록 영역 */}
+            <View style={styles.recordingsContainer}>
+              <Text style={styles.recordingsTitle}>저장된 녹음 파일</Text>
+              
+              {recordings.length === 0 ? (
+                <Text style={styles.noRecordingsText}>저장된 녹음 파일이 없습니다.</Text>
+              ) : (
+                // FlatList 대신 일반 매핑 사용 (중첩 스크롤 방지)
+                <View style={styles.recordingsList}>
+                  {recordings.map(item => renderRecordingItem({ item }))}
+                </View>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+        
+        <TouchableOpacity style={styles.chatButton} onPress={startWebexChat}>
+          <Text>
+            <Ionicons name="videocam-outline" size={24} color="black" />
+          </Text>
+          <Text style={styles.chatButtonText}>의료진과 화상 통화하기</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   };
@@ -993,7 +1137,9 @@ export default function App() {
 
 
 
+
 const styles = StyleSheet.create({
+  // 기본 컨테이너 스타일
   container: {
     flex: 1,
     backgroundColor: '#fff',
@@ -1004,6 +1150,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  scrollContainer: { 
+    flex: 1, 
+    width: '100%', 
+  },
+  scrollContent: { 
+    paddingBottom: 20, // 하단 패딩 추가하여 마지막 항목이 잘 보이도록
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+    alignItems: 'center',
+    flexGrow: 1, // flexGrow 추가하여 스크롤이 가능하도록
+  },
+
+  // 헤더 관련 스타일
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1023,6 +1184,44 @@ const styles = StyleSheet.create({
   searchButton: {
     padding: 8,
   },
+  closeButton: {
+    padding: 8,
+  },
+  webexTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  webexHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFEFEF',
+  },
+
+  // 기본 텍스트 스타일
+  errorText: {
+    color: 'red',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  message: {
+    fontSize: 20,
+    color: '#fff',
+    marginBottom: 40,
+    textAlign: 'center',
+  },
+  dateText: {
+    fontWeight: '500',
+    color: '#444',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+  },
+
+  // 리스트 관련 스타일
   listContainer: {
     paddingHorizontal: 16,
     paddingBottom: 80,
@@ -1067,17 +1266,26 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 10,
   },
-  errorText: {
-    color: 'red',
-    textAlign: 'center',
-    fontSize: 16,
+
+  // 버튼 관련 스타일
+  baseButton: {
+    borderRadius: 20,
+    paddingVertical: 15,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sttButton: {
     position: 'absolute',
-    bottom: 90, // chatButton 위로 살짝 띄움
+    bottom: 40,
     right: 24,
     left: 24,
-    backgroundColor: '#4A90E2', // 파란색 배경 유지
+    backgroundColor: '#4A90E2',
     borderRadius: 20,
     padding: 15,
     flexDirection: 'row',
@@ -1088,7 +1296,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },  
+  },
   sttButtonText: {
     color: 'white',
     fontSize: 16,
@@ -1117,8 +1325,82 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  
-  // Splash screen styles
+  startButton: {
+    backgroundColor: '#FFE082',
+    paddingHorizontal: 40,
+    paddingVertical: 16,
+    borderRadius: 30,
+  },
+  startButtonText: {
+    color: 'black',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  emergencyButton: {
+    position: 'absolute',
+    bottom: 24,
+    left: 24,
+    right: 24,
+    backgroundColor: '#000',
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  emergencyButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  kakaoNaviButton: {
+    marginTop: 16,
+    marginHorizontal: 16,
+    backgroundColor: '#FFCD00',
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  kakaoNaviButtonText: {
+    color: '#000',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  micButton: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: '#5c6bc0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  micButtonRecording: {
+    backgroundColor: '#ef5350',
+  },
+  micButtonPreparing: {
+    backgroundColor: '#ffb74d',
+  },
+  micButtonStopping: {
+    backgroundColor: '#9575cd',
+  },
+  micButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  deleteButton: {
+    padding: 8,
+  },
+
+  // Splash 스크린 관련 스타일
   splashContainer: {
     flex: 1,
     backgroundColor: '#FFF',
@@ -1142,23 +1424,8 @@ const styles = StyleSheet.create({
     color: '#666',
     lineHeight: 26,
   },
-  dateText: {
-    fontWeight: '500',
-    color: '#444',
-  },
-  startButton: {
-    backgroundColor: '#FFE082',
-    paddingHorizontal: 40,
-    paddingVertical: 16,
-    borderRadius: 30,
-  },
-  startButtonText: {
-    color: 'black',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  
-  // Navigation screen styles
+
+  // 맵 관련 스타일
   mapContainer: {
     flex: 1,
     position: 'relative',
@@ -1188,6 +1455,12 @@ const styles = StyleSheet.create({
   },
   mapView: {
     flex: 1,
+  },
+  staticMapImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 10,
+    marginBottom: 10,
   },
   timeDisplay: {
     position: 'absolute',
@@ -1255,39 +1528,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#D0D0D0',
     marginHorizontal: 4,
   },
-  emergencyButton: {
-    position: 'absolute',
-    bottom: 24,
-    left: 24,
-    right: 24,
-    backgroundColor: '#000',
-    borderRadius: 20,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  emergencyButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
-  },
 
-  kakaoNaviButton: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    backgroundColor: '#FFCD00',
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  kakaoNaviButtonText: {
-    color: '#000',
-    fontWeight: '600',
-    fontSize: 16,
-    marginLeft: 8,
-  },  
-
+  // WebView 관련 스타일
   webView: {
     flex: 1,
   },
@@ -1301,184 +1543,198 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-  },
-  webexHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EFEFEF',
-  },
-  closeButton: {
-    padding: 8,
-  },
-  webexTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  message: {
-    fontSize: 20,
-    color: '#fff',
-    marginBottom: 40,
-    textAlign: 'center',
-  },
-  micButton: {
-    backgroundColor: '#38BDF8',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-  },
-  micButtonText: {
-    fontSize: 18,
-    color: '#fff',
-  },
-  
-  // 기존 스타일은 여기에 유지
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
 
-  staticMapImage: {
-    width: '100%',
-    height: 300,
-    borderRadius: 10,
-    marginBottom: 10,
-  },
-
-
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  backButton: {
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  micButton: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: '#5c6bc0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  micButtonRecording: {
-    backgroundColor: '#ef5350',
-  },
-  micButtonPreparing: {
-    backgroundColor: '#ffb74d',
-  },
-  micButtonStopping: {
-    backgroundColor: '#9575cd',
-  },
-  micButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  textResultContainer: {
-    marginVertical: 16,
-    width: '100%',
-    maxHeight: '40%', // 화면의 최대 40%까지만 차지
-    borderColor: '#d3d3d3', // 연한 검정색
-    borderWidth: 1, // 둘레 두께
-    borderRadius: 8, // 둥근 모서리 (선택 사항)
-  },
-  
-  textResultTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#333',
-    margin: 10,
-  },
-  
-  textResultScrollBox: {
-    backgroundColor: '#f5f5f5',
+  // 통일된 결과 컨테이너 스타일 - 공통
+  resultContainerBase: {
+    backgroundColor: 'white',
     borderRadius: 8,
-    padding: 0, // 패딩을 ScrollView 내부 컨텐츠로 이동
-    maxHeight: 200, // 최대 높이 설정
-    margin: 10,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
   },
-  
-  textResultScrollContent: {
-    padding: 12, // 패딩을 여기로 이동
+  resultTitleBase: {
+    color: 'white',
+    fontWeight: 'bold',
+    padding: 12,
+    fontSize: 16,
   },
-  
-  textResultContent: {
-    fontSize: 15,
-    color: '#333',
-    lineHeight: 22,
-  },
-  
-  textResultHint: {
+  resultHintBase: {
+    textAlign: 'center',
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'right',
-    margin: 10,
+    color: '#6b7280',
+    paddingVertical: 8,
   },
-  
-  recordingsContainer: {
-    flex: 1, // 남은 공간을 모두 차지
+  scrollBoxBase: {
+    maxHeight: 200,
+  },
+  scrollContentBase: {
+    padding: 12,
+  },
+  contentTextBase: {
+    fontSize: 14,
+    color: '#374151',
+  },
+
+  analysisContainer: {
     width: '100%',
-    marginTop: 20,
-    borderColor: '#d3d3d3', // 연한 검정색
-    borderWidth: 1, // 둘레 두께
-    borderRadius: 8, // 둥근 모서리 (선택 사항)
+    backgroundColor: 'white',
+    borderRadius: 8,
+    marginBottom: 16,
+    marginTop: 10,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    borderWidth: 1,
+    borderColor: '#d3d3d3',
   },
-  noRecordingsText: {
-    margin: 10,
+  analysisTitle: {
+    backgroundColor: '#3b82f6', // 파란색 헤더
+    color: 'white',
+    fontWeight: 'bold',
+    padding: 12,
+    fontSize: 16,
+  },
+  tableContainer: {
+    width: '100%',
+    backgroundColor: '#fff',
+    padding: 8,
+  },
+  table: {
+    width: '100%',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  evenRow: {
+    backgroundColor: '#f9fafb',
+  },
+  oddRow: {
+    backgroundColor: 'white',
+  },
+  tableCell: {
+    padding: 12,
+    justifyContent: 'center',
+  },
+  tableHeaderCell: {
+    backgroundColor: '#f3f4f6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d1d5db',
+  },
+  tableHeaderText: {
+    fontWeight: 'bold',
+    fontSize: 14,
+    color: '#111827',
+  },
+  tableCellLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1f2937',
+  },
+  tableCellValue: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  resultHintText: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#6b7280',
+    paddingVertical: 8,
   },
   
+
+
+  // 인식된 텍스트 결과
+  textResultContainer: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    maxHeight: '30%', // 분석결과보다 작게
+  },
+  textResultTitle: {
+    backgroundColor: '#10b981', // 녹색 헤더
+    color: 'white',
+    fontWeight: 'bold',
+    padding: 12,
+    fontSize: 16,
+  },
+  textResultScrollBox: {
+    maxHeight: null, // 스크롤 제거
+  },
+  textResultBox: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginVertical: 8, 
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  textResultScrollContent: {
+    padding: 12,
+  },
+  textResultContent: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  textResultHint: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: '#6b7280',
+    paddingVertical: 8,
+  },
+
+  // 저장된 녹음 파일 관련 스타일
+  recordingsContainer: {
+    flex: 0, // 고정 높이 제거
+    width: '100%',
+    marginTop: 15,
+    borderColor: '#d3d3d3',
+    borderWidth: 1,
+    borderRadius: 8,
+    backgroundColor: 'white',
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+  },
   recordingsTitle: {
     fontSize: 16,
     fontWeight: 'bold',
+    padding: 12,
+    color: 'white',
+    backgroundColor: '#9575cd', // 보라색 헤더
+  },
+  recordingsList: {
+    marginTop: 8, // FlatList 대신 사용하므로 스타일 조정
+  },
+  noRecordingsText: {
     margin: 10,
-    color: '#333',
-  },
-  
-  recordingsList: {
-    flex: 1, // FlatList가 부모 컨테이너 내에서 확장되도록 설정
-  },
-  recordingsList: {
-    flex: 1,
+    color: '#666',
+    textAlign: 'center',
   },
   recordingItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
     borderRadius: 8,
-    marginBottom: 12,
-    marginLeft: 10,
-    marginRight: 10,
+    marginVertical: 6,
+    marginHorizontal: 10,
     padding: 12,
     elevation: 2,
     shadowColor: '#000',
@@ -1517,7 +1773,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontStyle: 'italic',
   },
-  deleteButton: {
-    padding: 8,
+  
+  // 에러 관련 스타일
+  errorContainer: {
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
   },
 });

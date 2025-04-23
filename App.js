@@ -25,10 +25,6 @@ import * as Clipboard from 'expo-clipboard';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { API_KEY, WEBEX_API_KEY, apiKey, accessKey } from './config';
 
-
-
-
-
 export default function App() {
   const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -74,12 +70,6 @@ export default function App() {
       }
     })();
   }, []);
-  /*
-  const openKakaoMap = (latitude, longitude, placeName = "병원") => {
-    const fallbackUrl = `https://map.kakao.com/link/to/${encodeURIComponent(placeName)},${latitude},${longitude}`;
-    Linking.openURL(fallbackUrl);
-  };
-  */
 
   const openKakaoMap = (latitude, longitude, placeName = "병원") => {
     // 목적지 좌표와 이름 설정
@@ -106,7 +96,6 @@ export default function App() {
         Linking.openURL(fallbackUrl);
       });
   };
-  
 
   const NavigationScreen = () => {
     if (!selectedHospital || !userLocation) return null;
@@ -186,11 +175,10 @@ export default function App() {
         <TouchableOpacity 
           onPress={() => openKakaoMap(lat, lon, selectedHospital.dutyName)} 
           style={styles.kakaoNaviButton}
-          >
+        >
           <Ionicons name="navigate" size={20} color="white" />
           <Text style={styles.kakaoNaviButtonText}>길안내 시작</Text>
         </TouchableOpacity>
-
       </SafeAreaView>
     );
   };
@@ -238,7 +226,6 @@ export default function App() {
         
         // Calculate distance and sort by distance
         const hospitalsWithDistance = hospitalItems.map((hospital, index) => {
-          
           // Check for field names that might contain coordinates
           const possibleLatFields = ['wgs84Lat', 'latitude', 'lat', 'YPos', 'y'];
           const possibleLonFields = ['wgs84Lon', 'longitude', 'lon', 'lng', 'XPos', 'x'];
@@ -299,7 +286,6 @@ export default function App() {
             return parseFloat(a.distance) - parseFloat(b.distance);
           });
 
-
         console.log(`정렬된 병원 수: ${sortedHospitals.length}`);
         setHospitals(sortedHospitals);
       } else {
@@ -314,7 +300,6 @@ export default function App() {
 
   // Determine hospital departments based on dutyEmclsName
   const getDepartments = (hospital) => {
-    
     // 지역응급의료센터 or 권역응급의료센터 일 경우 기본 과목 포함
     // Check for partial string match as API might return different formats
     if (hospital.dutyEmclsName && 
@@ -328,7 +313,6 @@ export default function App() {
       return '내과';
     }
   };
-
 
   // 화상채팅 시작 함수
   const startWebexChat = async () => {
@@ -384,7 +368,7 @@ export default function App() {
     <SafeAreaView style={styles.splashContainer}>
       <View style={styles.splashContent}>
         <Text style={styles.splashMessage}>
-        생명을 향한 출동, 오늘도 고맙습니다.
+          생명을 향한 출동, 오늘도 고맙습니다.
         </Text>
         <TouchableOpacity 
           style={styles.startButton}
@@ -431,14 +415,10 @@ export default function App() {
         </Text>
         <Text style={styles.chatButtonText}>환자 상태 분석</Text>
       </TouchableOpacity>
-
     </SafeAreaView>
   );
 
-
-
   const handleGPTAnalysis = async (inputText) => {
-  
     try {
       const prompt = `${inputText}를 바탕으로 현재 필요한 응급처치 방법(예를 들어 손가락을 얼음물에 담그기, 혹은 상처부위를 심장보다 높게 하기 등)을 한줄로 깔끔하게 소개`;
 
@@ -472,7 +452,6 @@ export default function App() {
       return 'GPT 분석 오류 발생';  // 오류 발생 시 기본 메시지 반환
     }
   };
-
 
   const handleDBAnalysis = async (inputText) => {
     try {
@@ -519,9 +498,6 @@ export default function App() {
       return 'GPT 분석 오류 발생';  // 오류 발생 시 기본 메시지 반환
     }
   };
-
-
-
 
   const STTScreen = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -635,7 +611,6 @@ export default function App() {
             linearPCMIsFloat: false,
           },
         };        
-
         
         console.log('Starting recording...');
         const { recording } = await Audio.Recording.createAsync(
@@ -733,6 +708,7 @@ export default function App() {
       }
     };
   
+  
     // 음성인식 API 호출 - 여기를 ETRI 대신 제시하신 방식으로 변경
     const processSTT = async (item) => {
       try {
@@ -787,15 +763,12 @@ export default function App() {
         console.log('STT 응답:', responseData);
         console.log('STT 응답:', response.status);
         console.log('응답 JSON 전체:', JSON.stringify(responseData, null, 2));
-
         
         if (responseData.result === 0) {
           // 인식된 텍스트 추출
           const text = responseData.return_object.recognized;
           // setRecognizedText(text);
           
-
-
           // GPT 분석 요청
           const gptAnalysisResult = await handleGPTAnalysis(text);
           // JSON 형식 반환
@@ -805,17 +778,12 @@ export default function App() {
           const textToCopy = `${text}\n\n\n환자 분석: \n${gptAnalysisResult}`;
           setRecognizedText(textToCopy);
           setJsonText(dbAnalysisResult);
-
-
-
-
+          
           // 클립보드에 복사
           // await Clipboard.setStringAsync(text);
           // showToast('텍스트가 클립보드에 복사되었습니다');
-
-
+          
           // DB 저장 로직
-
           try {
             console.log("DB 저장 시도 중...");
             
@@ -867,7 +835,7 @@ export default function App() {
         setProcessingId(null);
       }
     };
-  
+
     // 녹음 파일 삭제
     const deleteRecording = async (id) => {
       try {
@@ -896,7 +864,7 @@ export default function App() {
         Alert.alert('오류', '파일을 삭제하는 중 오류가 발생했습니다.');
       }
     };
-  
+
     // 삭제 확인 대화상자
     const confirmDelete = (id) => {
       Alert.alert(
@@ -908,8 +876,6 @@ export default function App() {
         ]
       );
     };
-
-
 
     const bounceAnim = useRef(new Animated.Value(1)).current; // 애니메이션 초기값
 
@@ -931,7 +897,6 @@ export default function App() {
       ).start();
     }, [bounceAnim]); // 빈 배열을 넣어 한 번만 실행되게 설정
 
-
     // JSON 문자열을 파싱하는 함수
     const parseJsonData = (jsonString) => {
       try {
@@ -942,8 +907,6 @@ export default function App() {
       }
     };
 
-
-  
     // 녹음 목록 렌더링 아이템
     const renderRecordingItem = ({ item }) => (
       <View style={styles.recordingItem}>
@@ -977,7 +940,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
     );
-  
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -987,7 +950,7 @@ export default function App() {
           <Text style={styles.headerTitle}>음성으로 응급상황을 전달</Text>
           <View style={{ width: 24 }} />
         </View>
-  
+
         {/* 전체 콘텐츠를 ScrollView로 감싸기 */}
         <ScrollView
           style={styles.scrollContainer}
@@ -1030,60 +993,60 @@ export default function App() {
                 <Text style={styles.textResultHint}>텍스트가 클립보드에 복사되었습니다</Text>
               </View>
             ) : null}
-  
+
             {/* 환자 분석 결과 */}
             {jsonText ? (
-      <View style={styles.analysisContainer}>
-        <Text style={styles.analysisTitle}>환자 분석 결과</Text>
-        <View style={styles.tableContainer}>
-          {(() => {
-            const patientData = parseJsonData(jsonText);
-          
-            if (!patientData) {
-              return (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>유효한 환자 데이터가 없습니다</Text>
+              <View style={styles.analysisContainer}>
+                <Text style={styles.analysisTitle}>환자 분석 결과</Text>
+                <View style={styles.tableContainer}>
+                  {(() => {
+                    const patientData = parseJsonData(jsonText);
+                  
+                    if (!patientData) {
+                      return (
+                        <View style={styles.errorContainer}>
+                          <Text style={styles.errorText}>유효한 환자 데이터가 없습니다</Text>
+                        </View>
+                      );
+                    }
+                  
+                    return (
+                      <View style={styles.table}>
+                        {/* 테이블 헤더 */}
+                        <View style={styles.tableRow}>
+                          <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 1 }]}>
+                            <Text style={styles.tableHeaderText}>항목</Text>
+                          </View>
+                          <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 2 }]}>
+                            <Text style={styles.tableHeaderText}>내용</Text>
+                          </View>
+                        </View>
+                      
+                        {/* 테이블 내용 */}
+                        {Object.entries(patientData).map(([key, value], index) => (
+                          <View 
+                            key={key} 
+                            style={[
+                              styles.tableRow, 
+                              index % 2 === 0 ? styles.evenRow : styles.oddRow
+                            ]}
+                          >
+                            <View style={[styles.tableCell, { flex: 1 }]}>
+                              <Text style={styles.tableCellLabel}>{key}</Text>
+                            </View>
+                            <View style={[styles.tableCell, { flex: 2 }]}>
+                              <Text style={styles.tableCellValue}>
+                                {value === null || value === "Null" ? "정보 없음" : value}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
                 </View>
-              );
-            }
-          
-            return (
-              <View style={styles.table}>
-                {/* 테이블 헤더 */}
-                <View style={styles.tableRow}>
-                  <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 1 }]}>
-                    <Text style={styles.tableHeaderText}>항목</Text>
-                  </View>
-                  <View style={[styles.tableCell, styles.tableHeaderCell, { flex: 2 }]}>
-                    <Text style={styles.tableHeaderText}>내용</Text>
-                  </View>
-                </View>
-              
-                {/* 테이블 내용 */}
-                {Object.entries(patientData).map(([key, value], index) => (
-                  <View 
-                    key={key} 
-                    style={[
-                      styles.tableRow, 
-                      index % 2 === 0 ? styles.evenRow : styles.oddRow
-                    ]}
-                  >
-                    <View style={[styles.tableCell, { flex: 1 }]}>
-                      <Text style={styles.tableCellLabel}>{key}</Text>
-                    </View>
-                    <View style={[styles.tableCell, { flex: 2 }]}>
-                      <Text style={styles.tableCellValue}>
-                        {value === null || value === "Null" ? "정보 없음" : value}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                <Text style={styles.resultHintText}>분석 결과가 저장되었습니다</Text>
               </View>
-            );
-          })()}
-        </View>
-        <Text style={styles.resultHintText}>분석 결과가 저장되었습니다</Text>
-      </View>
             ) : null}
             
             {/* 녹음 파일 목록 영역 */}
@@ -1095,7 +1058,11 @@ export default function App() {
               ) : (
                 // FlatList 대신 일반 매핑 사용 (중첩 스크롤 방지)
                 <View style={styles.recordingsList}>
-                  {recordings.map(item => renderRecordingItem({ item }))}
+                  {recordings.map(item => (
+                    <React.Fragment key={item.id}>
+                      {renderRecordingItem({ item })}
+                    </React.Fragment>
+                  ))}
                 </View>
               )}
             </View>
@@ -1110,7 +1077,7 @@ export default function App() {
         </TouchableOpacity>
       </SafeAreaView>
     );
-  };
+  }
 
   if (loading) {
     return (

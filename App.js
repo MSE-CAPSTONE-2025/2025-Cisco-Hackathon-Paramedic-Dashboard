@@ -23,7 +23,7 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { API_KEY, WEBEX_API_KEY, apiKey, accessKey } from './config';
+import { API_KEY, WEBEX_API_KEY, apiKey, accessKey, WEBEX_ACCESS_TOKEN } from './config';
 
 export default function App() {
   const [hospitals, setHospitals] = useState([]);
@@ -36,6 +36,10 @@ export default function App() {
   const [estimatedTime, setEstimatedTime] = useState('7분-9분');
   const [showWebex, setShowWebex] = useState(false);
   const [webexUrl, setWebexUrl] = useState('');
+  const [isWebexLoading, setIsWebexLoading] = useState(false);
+  const [recognizedText, setRecognizedText] = useState(''); // 인식된 텍스트
+  const [jsonText, setJsonText] = useState('')
+  const [autoText, setAutoText] = useState('');
 
   const ENCODED_API_KEY = encodeURIComponent(API_KEY);
   const BASE_URL = 'http://apis.data.go.kr/B552657/ErmctInfoInqireService';
@@ -314,6 +318,7 @@ export default function App() {
     }
   };
 
+  /*
   // 화상채팅 시작 함수
   const startWebexChat = async () => {
     const meetingUrl = `webex://meet/${encodeURIComponent('expert-meeting')}?token=${encodeURIComponent(WEBEX_API_KEY)}`;
@@ -326,6 +331,82 @@ export default function App() {
       await Linking.openURL(fallback); // 웹으로 fallback
     }
   };
+  */
+
+
+  const WEBEX_ROOM_ID = 'cd002d00-15da-11f0-8115-950bce9a44c3'; // 텍스트를 보낼 Webex 룸 ID
+
+  // 화상채팅 시작 및 텍스트 전송 함수
+  const startWebexChat = async () => {
+    try {
+      // 로딩 표시 시작 (상태 변수 추가 필요)
+      console.log('=== Webex 연결 시작 ===');
+      setIsWebexLoading(true);
+      
+      // 1. 현재 인식된 텍스트가 있다면 Webex API를 통해 먼저 전송
+      if (autoText) {
+        console.log('전송할 텍스트.');
+        try {
+          console.log('텍스트를 Webex 채팅방에 전송 시도...');
+          
+          // Webex REST API를 사용하여 메시지 전송
+          const response = await fetch('https://webexapis.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${WEBEX_ACCESS_TOKEN}`
+            },
+            body: JSON.stringify({
+              roomId: WEBEX_ROOM_ID,
+              text: autoText
+            })
+          });
+          
+          if (response.ok) {
+            console.log('텍스트가 Webex 채팅방에 전송되었습니다.');
+            // showToast('환자 정보가 채팅방에 전송되었습니다');
+          } else {
+            console.error('Webex 메시지 전송 실패:', await response.text());
+            // 실패해도 화상통화는 계속 진행
+          }
+        } catch (apiError) {
+          console.error('Webex API 호출 오류:', apiError);
+          // API 오류가 발생해도 화상통화는 계속 진행
+        }
+      }
+      
+      const meetingUrl = `webex://meet/${encodeURIComponent('expert-meeting')}?token=${encodeURIComponent(WEBEX_API_KEY)}`;
+      const fallback = `https://web.webex.com/meet/${encodeURIComponent('expert-meeting')}?token=${encodeURIComponent(WEBEX_API_KEY)}`;
+  
+      const supported = await Linking.canOpenURL(meetingUrl);
+      if (supported) {
+        await Linking.openURL(meetingUrl);      // 앱으로 열기 시도
+      } else {
+        await Linking.openURL(fallback); // 웹으로 fallback
+      }
+      /*
+      // 2. Webex 화상통화 시작 (기존 로직)
+      const meetingUrl = `webex://meet/${encodeURIComponent('expert-meeting')}?token=${encodeURIComponent(WEBEX_API_KEY)}`;
+      const fallback = `https://web.webex.com/meet/${encodeURIComponent('expert-meeting')}?token=${encodeURIComponent(WEBEX_API_KEY)}`;
+
+      const supported = await Linking.canOpenURL(meetingUrl);
+      if (supported) {
+        await Linking.openURL(meetingUrl);      // 앱으로 열기 시도
+      } else {
+        await Linking.openURL(fallback); // 웹으로 fallback
+      }
+      console.log('Webex 화상통화가 연결되었습니다.');
+      */
+    } catch (error) {
+      console.error('Webex 연결 오류:', error);
+      Alert.alert('연결 오류', '의료진과의 통화 연결 중 문제가 발생했습니다.');
+    } finally {
+      // 로딩 표시 종료
+      setIsWebexLoading(false);
+    }
+  };
+
+
 
   const renderHospitalItem = ({ item, index }) => {
     // Get departments
@@ -503,8 +584,6 @@ export default function App() {
     const [isRecording, setIsRecording] = useState(false);
     const [recordings, setRecordings] = useState([]);
     const [processingId, setProcessingId] = useState(null); // STT 처리 중인 파일 ID
-    const [recognizedText, setRecognizedText] = useState(''); // 인식된 텍스트
-    const [jsonText, setJsonText] = useState('')
     const recordingRef = useRef(null);
     const [recordingStatus, setRecordingStatus] = useState('idle');
   
@@ -776,6 +855,7 @@ export default function App() {
           
           // 원본 텍스트와 GPT 분석 결과를 결합하여 클립보드에 복사
           const textToCopy = `${text}\n\n\n환자 분석: \n${gptAnalysisResult}`;
+          setAutoText(textToCopy);
           setRecognizedText(textToCopy);
           setJsonText(dbAnalysisResult);
           
@@ -1036,7 +1116,7 @@ export default function App() {
                             </View>
                             <View style={[styles.tableCell, { flex: 2 }]}>
                               <Text style={styles.tableCellValue}>
-                                {value === null || value === "Null" ? "정보 없음" : value}
+                                {value === null || value === "Null" ? "-" : value}
                               </Text>
                             </View>
                           </View>
